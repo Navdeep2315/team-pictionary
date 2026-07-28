@@ -74,7 +74,7 @@ io.on('connection', (socket) => {
         }, 1000);
     });
 
-    // 4. Handle Guesses (UPDATED LOGIC FOR SPEED SCORING)
+        // 4. Handle Guesses (UPDATED LOGIC FOR SPEED SCORING)
     socket.on('guess', (guess) => {
         const room = socket.room;
         const roomState = rooms[room];
@@ -94,9 +94,14 @@ io.on('connection', (socket) => {
                 word: roomState.currentWord,
                 scores: roomState.scores 
             });
-            logToRoom(room, `✅ ${socket.username} guessed it with ${roomState.timeLeft}s left! (+${pointsEarned} pts)`);
+            logToRoom(room, `✅ <b>${socket.username}</b> guessed it with ${roomState.timeLeft}s left! (+${pointsEarned} pts)`);
         } else {
             socket.emit('wrong-guess');
+            // ADDED: Broadcast the wrong guess to everyone in the room
+            logToRoom(room, `💬 <b>${socket.username}:</b> ${guess}`);
+        }
+    });
+
         }
     });
 
