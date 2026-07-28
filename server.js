@@ -22,21 +22,17 @@ io.on('connection', (socket) => {
         socket.username = username;
         socket.room = room;
 
-        // Initialize room if it doesn't exist
         if (!rooms[room]) {
             rooms[room] = {
                 drawerId: null,
                 currentWord: "",
                 timeLeft: 60,
                 timer: null,
-                scores: {} // username: score
+                scores: {} 
             };
         }
 
-        // Add user to room scores
         rooms[room].scores[username] = rooms[room].scores[username] || 0;
-
-        // Welcome player and update room details
         io.to(room).emit('update-scores', rooms[room].scores);
         logToRoom(room, `${username} has joined the room!`);
     });
@@ -62,12 +58,10 @@ io.on('connection', (socket) => {
         roomState.currentWord = WORDS[Math.floor(Math.random() * WORDS.length)];
         roomState.timeLeft = 60;
 
-        // Notify room
         io.to(roomState.drawerId).emit('you-are-drawer', { word: roomState.currentWord });
         socket.to(room).emit('new-round', { length: roomState.currentWord.length, drawer: socket.username });
         logToRoom(room, `${socket.username} is now drawing!`);
 
-        // Manage timer
         clearInterval(roomState.timer);
         roomState.timer = setInterval(() => {
             roomState.timeLeft--;
@@ -80,7 +74,7 @@ io.on('connection', (socket) => {
         }, 1000);
     });
 
-    // 4. Handle Guesses
+    // 4. Handle Guesses (UPDATED LOGIC FOR SPEED SCORING)
     socket.on('guess', (guess) => {
         const room = socket.room;
         const roomState = rooms[room];
@@ -88,14 +82,19 @@ io.on('connection', (socket) => {
 
         if (guess.toLowerCase() === roomState.currentWord.toLowerCase()) {
             clearInterval(roomState.timer);
-            roomState.scores[socket.username] += 100; // Add points to guesser
+            
+            // Calculate points: 100 base points + time bonus
+            const timeBonus = roomState.timeLeft > 0 ? Math.ceil(roomState.timeLeft / 6) : 0;
+            const pointsEarned = 100 + (timeBonus * 10);
+            
+            roomState.scores[socket.username] += pointsEarned; 
 
             io.to(room).emit('correct-guess', { 
                 username: socket.username, 
                 word: roomState.currentWord,
                 scores: roomState.scores 
             });
-            logToRoom(room, `${socket.username} guessed the word correctly!`);
+            logToRoom(room, `✅ ${socket.username} guessed it with ${roomState.timeLeft}s left! (+${pointsEarned} pts)`);
         } else {
             socket.emit('wrong-guess');
         }
