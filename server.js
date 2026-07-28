@@ -10,13 +10,12 @@ app.use(express.static('public'));
 
 const WORDS = ["lighthouse","octopus","umbrella","rocket ship","volcano","pineapple","guitar","snowman","dragon","helicopter","cactus","robot","mermaid","waterfall","treehouse"];
 
-// Keep track of rooms, users, and game states
 const rooms = {}; 
 
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
 
-    // 1. Handle Room Joining
+    // 1. Join Room
     socket.on('join-room', ({ username, room }) => {
         socket.join(room);
         socket.username = username;
@@ -34,21 +33,15 @@ io.on('connection', (socket) => {
 
         rooms[room].scores[username] = rooms[room].scores[username] || 0;
         io.to(room).emit('update-scores', rooms[room].scores);
-        logToRoom(room, `${username} has joined the room!`);
+        io.to(room).emit('log-message', `👋 <b>${username}</b> has joined the room!`);
     });
 
-    // 2. Handle Drawing
-    socket.on('draw-start', (p) => {
-        if (socket.room) socket.to(socket.room).emit('draw-start', p);
-    });
-    socket.on('draw-move', (data) => {
-        if (socket.room) socket.to(socket.room).emit('draw-move', data);
-    });
-    socket.on('draw-clear', () => {
-        if (socket.room) socket.to(socket.room).emit('draw-clear');
-    });
+    // 2. Drawing Sync
+    socket.on('draw-start', (p) => { if (socket.room) socket.to(socket.room).emit('draw-start', p); });
+    socket.on('draw-move', (data) => { if (socket.room) socket.to(socket.room).emit('draw-move', data); });
+    socket.on('draw-clear', () => { if (socket.room) socket.to(socket.room).emit('draw-clear'); });
 
-    // 3. Handle Game/Round Loop
+    // 3. Game Loop
     socket.on('start-round', () => {
         const room = socket.room;
         if (!room || !rooms[room]) return;
@@ -60,7 +53,7 @@ io.on('connection', (socket) => {
 
         io.to(roomState.drawerId).emit('you-are-drawer', { word: roomState.currentWord });
         socket.to(room).emit('new-round', { length: roomState.currentWord.length, drawer: socket.username });
-        logToRoom(room, `${socket.username} is now drawing!`);
+        io.to(room).emit('log-message', `✏️ <b>${socket.username}</b> is now drawing!`);
 
         clearInterval(roomState.timer);
         roomState.timer = setInterval(() => {
@@ -69,12 +62,12 @@ io.on('connection', (socket) => {
             if (roomState.timeLeft <= 0) {
                 clearInterval(roomState.timer);
                 io.to(room).emit('time-up', { word: roomState.currentWord });
-                logToRoom(room, `Time's up! The word was "${roomState.currentWord}".`);
+                io.to(room).emit('log-message', `⏰ Time's up! The word was "<b>${roomState.currentWord}</b>".`);
             }
         }, 1000);
     });
 
-        // 4. Handle Guesses (UPDATED LOGIC FOR SPEED SCORING)
+    // 4. Guesses & Live Chat
     socket.on('guess', (guess) => {
         const room = socket.room;
         const roomState = rooms[room];
@@ -83,10 +76,8 @@ io.on('connection', (socket) => {
         if (guess.toLowerCase() === roomState.currentWord.toLowerCase()) {
             clearInterval(roomState.timer);
             
-            // Calculate points: 100 base points + time bonus
             const timeBonus = roomState.timeLeft > 0 ? Math.ceil(roomState.timeLeft / 6) : 0;
             const pointsEarned = 100 + (timeBonus * 10);
-            
             roomState.scores[socket.username] += pointsEarned; 
 
             io.to(room).emit('correct-guess', { 
@@ -94,14 +85,11 @@ io.on('connection', (socket) => {
                 word: roomState.currentWord,
                 scores: roomState.scores 
             });
-            logToRoom(room, `✅ <b>${socket.username}</b> guessed it with ${roomState.timeLeft}s left! (+${pointsEarned} pts)`);
+            io.to(room).emit('log-message', `✅ <b>${socket.username}</b> guessed it! (+${pointsEarned} pts)`);
         } else {
             socket.emit('wrong-guess');
-            // ADDED: Broadcast the wrong guess to everyone in the room
-            logToRoom(room, `💬 <b>${socket.username}:</b> ${guess}`);
-        }
-    });
-
+            // This line guarantees wrong guesses broadcast to the whole room
+            io.to(room).emit('log-message', `💬 <b>${socket.username}:</b> ${guess}`);
         }
     });
 
@@ -110,14 +98,11 @@ io.on('connection', (socket) => {
         const roomState = rooms[room];
         if (roomState && socket.id === roomState.drawerId) {
             clearInterval(roomState.timer);
-            io.to(room).emit('time-up', { word: roomState.currentWord, message: "The drawer disconnected." });
+            io.to(room).emit('time-up', { word: roomState.currentWord, message: "Drawer left." });
+            io.to(room).emit('log-message', `❌ The drawer disconnected. Round ended.`);
         }
     });
 });
-
-function logToRoom(room, message) {
-    io.to(room).emit('log-message', message);
-}
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
