@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Break Room — Pictionary Multiplayer</title>
+<link href="https://fonts.googleapis.com/css2family=Open+Sans:wght@300;400;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root{--dl-green:#86BC25;--dl-green-dark:#6B9A1E;--dl-neon:#86EB22;--dl-blue:#00A3E0;--dl-charcoal:#282728;--dl-gray-900:#1A1A1A;--dl-gray-100:#F5F5F5;--dl-gray-200:#E6E6E6;--red:#DA291C;--amber:#E8A317;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Open Sans',sans-serif;background:var(--dl-gray-100);color:var(--dl-gray-900);min-height:100vh;display:flex;flex-direction:column}
+  header{background:var(--dl-charcoal);color:#fff;padding:18px 32px;display:flex;align-items:center;border-bottom:4px solid var(--dl-green)}
+  .brand{font-weight:800;font-size:20px;letter-spacing:-.3px;color:#fff} .brand span{color:var(--dl-neon)}
+  
+  /* Lobbies & Login styling */
+  .login-container { max-width: 400px; margin: 100px auto; background: white; padding: 30px; border-radius: 12px; border: 1px solid var(--dl-gray-200); box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+  .login-container h2 { margin-bottom: 20px; font-weight: 800; text-align: center; color: var(--dl-charcoal); }
+  .input-group { margin-bottom: 16px; }
+  .input-group label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: #666; text-transform: uppercase; }
+  .input-group input { width: 100%; padding: 12px; border: 2px solid var(--dl-gray-200); border-radius: 8px; font-size: 15px; outline: none; }
+  .input-group input:focus { border-color: var(--dl-green); }
+  
+  /* Main layouts */
+  main{flex:1;display:flex;justify-content:center;padding:32px 24px}
+  .wrap{width:100%;max-width:1000px;display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start}
+  .card{background:#fff;border:1px solid var(--dl-gray-200);border-radius:14px;padding:22px}
+  .wordbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .wlbl{font-size:12px;font-weight:700;color:#888;text-transform:uppercase}
+  .word{font-size:26px;font-weight:800;color:var(--dl-green-dark)} .word.hidden{color:var(--dl-gray-200);letter-spacing:6px}
+  .timer{font-weight:800;font-size:22px;color:var(--dl-green-dark)} .timer.low{color:var(--red)}
+  .canvas-shell{border:2px solid var(--dl-gray-200);border-radius:12px;overflow:hidden;background:#fff}
+  canvas{display:block;width:100%;cursor:crosshair}
+  .toolbar{display:flex;align-items:center;gap:8px;margin-top:16px; transition: opacity 0.3s;}
+  .toolbar.disabled { opacity: 0.3; pointer-events: none; }
+  .swatch{width:30px;height:30px;border-radius:8px;border:2px solid var(--dl-gray-200);cursor:pointer} .swatch.active{border-color:var(--dl-charcoal);box-shadow:0 0 0 2px #fff,0 0 0 4px var(--dl-charcoal)}
+  .sep{width:1px;height:28px;background:var(--dl-gray-200)}
+  .brush{width:34px;height:30px;border-radius:8px;border:2px solid var(--dl-gray-200);background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center} .brush.active{border-color:var(--dl-green)} .brush b{display:block;border-radius:50%;background:var(--dl-charcoal)}
+  .btn{font-family:inherit;font-weight:700;font-size:13px;padding:12px 16px;border-radius:8px;border:none;cursor:pointer; width: 100%; }
+  .btn-primary{background:var(--dl-green);color:#fff} .btn-ghost{background:transparent;border:1.5px solid var(--dl-gray-200)}
+  .panel h3{font-size:12px;color:#888;font-weight:700;margin-bottom:14px;text-transform:uppercase}
+  
+  /* Leaderboard Styling */
+  .score-list { margin-bottom: 20px; font-size: 14px;}
+  .score-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--dl-gray-200); }
+  .score-item .bold { font-weight: 700; }
+
+  .guess-row{display:flex;gap:8px;margin-bottom:14px} .guess-row input{flex:1;padding:11px 14px;border:2px solid var(--dl-gray-200);border-radius:9px;outline:none}
+  .feedback{min-height:22px;font-weight:700;font-size:14px;text-align:center;margin-bottom:16px}
+  .log{font-size:13px;color:#666;line-height:1.6;border-top:1px solid var(--dl-gray-200);padding-top:14px;max-height:160px;overflow-y:auto}
+  .actions{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+  .hidden-screen { display: none !important; }
+</style>
+<script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <header><div class="brand">Break<span>Room</span></div></header>
+
+  <!-- Login/Room Entry Screen -->
+  <div class="login-container" id="loginScreen">
+    <h2>Join Pictionary</h2>
+    <div class="input-group">
+      <label for="usernameInput">Your Name</label>
+      <input type="text" id="usernameInput" placeholder="Enter your name..." autocomplete="off" />
+    </div>
+    <div class="input-group">
+      <label for="roomInput">Room Number / Name</label>
+      <input type="text" id="roomInput" placeholder="e.g., Room 101" autocomplete="off" />
+    </div>
+    <button class="btn btn-primary" id="joinBtn">Join Room</button>
+  </div>
+
+  <!-- Main Game Screen (Starts hidden) -->
+  <main class="hidden-screen" id="gameScreen">
+    <div class="wrap">
+      <div class="card">
+        <div class="wordbar">
+          <div><span class="wlbl" id="roleLabel">Waiting...</span> <span class="word hidden" id="word"></span></div>
+          <div class="timer" id="timer">60</div>
+        </div>
+        <div class="canvas-shell"><canvas id="pad" width="640" height="440"></canvas></div>
+        <div class="toolbar disabled" id="toolbar">
+          <div class="swatches" id="swatches"></div><div class="sep"></div>
+          <div class="brushes" id="brushes"></div><div class="sep"></div>
+          <button class="btn btn-ghost" id="eraserBtn" style="width: auto;">Eraser</button>
+          <button class="btn btn-ghost" id="clearBtn" style="width: auto;">Clear</button>
+        </div>
+      </div>
+      <div class="card panel">
+        <h3>Leaderboard</h3>
+        <div class="score-list" id="scoreList">
+          <!-- Scores will update here live -->
+        </div>
+        <h3>Guess the word</h3>
+        <div class="guess-row">
+          <input id="guessInput" type="text" placeholder="Type guess..." autocomplete="off" />
+          <button class="btn btn-primary" id="guessBtn" style="width: auto;">Go</button>
+        </div>
+        <div class="feedback" id="feedback"></div>
+        <div class="actions"><button class="btn btn-primary" id="newBtn">Be the Drawer</button></div>
+        <h3 style="margin-top:20px">Room Activity Log</h3>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </main>
+
+<script>
+const socket = io();
+const COLORS=["#1A1A1A","#86BC25","#00A3E0","#DA291C","#E8A317"];
+const $ = id => document.getElementById(id);
+
+let isDrawer = false;
+let myUsername = "";
+
+// ---- Login Handling ----
+$('joinBtn').addEventListener('click', () => {
+  const username = $('usernameInput').value.trim();
+  const room = $('roomInput').value.trim();
+  
+  if (!username || !room) {
+    alert("Please enter both your name and a room name!");
+    return;
+  }
+
+  myUsername = username;
+  socket.emit('join-room', { username, room });
+
+  // Swap screens
+  $('loginScreen').classList.add('hidden-screen');
+  $('gameScreen').classList.remove('hidden-screen');
+});
+
+// ---- Canvas Drawing ----
+const canvas=$('pad'), ctx=canvas.getContext('2d');
+let drawing=false, color=COLORS[0], size=4, erasing=false;
+
+function pos(e){
+  const r=canvas.getBoundingClientRect(), t=e.touches?e.touches[0]:e;
+  return {x:(t.clientX-r.left)*(canvas.width/r.width), y:(t.clientY-r.top)*(canvas.height/r.height)};
+}
+
+function start(e){
+  if(!isDrawer) return;
+  drawing=true; const p=pos(e);
+  ctx.beginPath(); ctx.moveTo(p.x,p.y); e.preventDefault();
+  socket.emit('draw-start', p);
+}
+
+function move(e){
+  if(!drawing || !isDrawer) return;
+  const p=pos(e);
+  drawStroke(p.x, p.y, color, size, erasing);
+  socket.emit('draw-move', { x: p.x, y: p.y, color, size, erasing });
+  e.preventDefault();
+}
+function stop(){ drawing=false; }
+
+['mousedown','touchstart'].forEach(ev=>canvas.addEventListener(ev,start));
+['mousemove','touchmove'].forEach(ev=>canvas.addEventListener(ev,move));
+['mouseup','mouseleave','touchend'].forEach(ev=>canvas.addEventListener(ev,stop));
+
+function drawStroke(x, y, c, s, erase) {
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.strokeStyle = erase ? '#fff' : c; 
+  ctx.lineWidth = erase ? s*4 : s;
+  ctx.lineTo(x,y); ctx.stroke();
+}
+
+function clearCanvas(broadcast = true){
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  if (broadcast && isDrawer) socket.emit('draw-clear');
+}
+clearCanvas(false);
+
+// ---- Toolbar Construction ----
+COLORS.forEach((c,i)=>{
+  const s=document.createElement('div');
+  s.className='swatch'+(i===0?' active':''); s.style.background=c;
+  s.addEventListener('click',()=>{
+    color=c; erasing=false;
+    document.querySelectorAll('.swatch').forEach(x=>x.classList.remove('active')); s.classList.add('active');
+  });
+  $('swatches').appendChild(s);
+});
+
+[[2,'S'],[4,'M'],[8,'L']].forEach(([w],i)=>{
+  const b=document.createElement('button');
+  b.className='brush'+(i===1?' active':'');
+  const dot=document.createElement('b'); dot.style.width=w+2+'px'; dot.style.height=w+2+'px';
+  b.appendChild(dot);
+  b.addEventListener('click',()=>{
+    size=w; document.querySelectorAll('.brush').forEach(x=>x.classList.remove('active')); b.classList.add('active');
+  });
+  $('brushes').appendChild(b);
+});
+
+$('eraserBtn').addEventListener('click',()=>{erasing=!erasing; $('eraserBtn').textContent=erasing?'Draw':'Eraser';});
+$('clearBtn').addEventListener('click', clearCanvas);
+
+function log(msg){ const d=document.createElement('div'); d.textContent='• '+msg; $('log').prepend(d); }
+
+// ---- Socket Events ----
+socket.on('draw-start', (p) => { ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+socket.on('draw-move', (data) => drawStroke(data.x, data.y, data.color, data.size, data.erasing));
+socket.on('draw-clear', () => clearCanvas(false));
+
+$('newBtn').addEventListener('click', () => socket.emit('start-round'));
+
+socket.on('you-are-drawer', (data) => {
+  isDrawer = true;
+  $('toolbar').classList.remove('disabled');
+  $('roleLabel').textContent = "You are drawing:";
+  $('word').textContent = data.word.toUpperCase();
+  $('word').classList.remove('hidden');
+  clearCanvas(false);
+});
+
+socket.on('new-round', (data) => {
+  isDrawer = false;
+  $('toolbar').classList.add('disabled');
+  $('roleLabel').textContent = `${data.drawer} is drawing:`;
+  $('word').textContent = Array(data.length).fill('•').join(' ');
+  $('word').classList.add('hidden');
+  $('feedback').textContent = '';
+  clearCanvas(false);
+});
+
+socket.on('timer-tick', (time) => {
+  $('timer').textContent = time;
+  if(time <= 10) $('timer').classList.add('low'); else $('timer').classList.remove('low');
+});
+
+socket.on('time-up', (data) => {
+  $('feedback').style.color = 'var(--amber)';
+  $('feedback').textContent = `Time's up! The word was "${data.word}".`;
+});
+
+// Leaderboard / Score Sync
+socket.on('update-scores', (scores) => {
+  $('scoreList').innerHTML = '';
+  for (let user in scores) {
+    const item = document.createElement('div');
+    item.className = 'score-item';
+    item.innerHTML = `<span class="${user === myUsername ? 'bold' : ''}">${user}</span><span>${scores[user]} pts</span>`;
+    $('scoreList').appendChild(item);
+  }
+});
+
+// Guessing
+function submitGuess() {
+  if (isDrawer) return;
+  const g = $('guessInput').value.trim();
+  if(g) socket.emit('guess', g);
+  $('guessInput').value = '';
+}
+$('guessBtn').addEventListener('click', submitGuess);
+$('guessInput').addEventListener('keydown', e => { if(e.key === 'Enter') submitGuess(); });
+
+socket.on('wrong-guess', () => {
+  $('feedback').style.color = 'var(--red)';
+  $('feedback').textContent = 'Not quite — keep guessing!';
+});
+
+socket.on('correct-guess', (data) => {
+  $('feedback').style.color = 'var(--dl-green-dark)';
+  $('feedback').textContent = `${data.username} guessed it! The word was "${data.word}".`;
+  socket.emit('update-scores', data.scores); // Sync score update request
+});
+
+socket.on('log-message', (msg) => log(msg));
+</script>
+</body>
+</html>
